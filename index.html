@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador de Documentos Automático</title>
+    
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Marked.js para renderizar Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* Estilo base para a página */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9; /* slate-100 */
+        }
+        /* Estilização da saída do Markdown */
+        .markdown-content h1, .markdown-content h2, .markdown-content h3 {
+            border-bottom: 1px solid #e2e8f0; /* slate-200 */
+            padding-bottom: 0.5rem;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .markdown-content a {
+            color: #0ea5e9; /* sky-500 */
+            text-decoration: underline;
+        }
+        .markdown-content code {
+            background-color: #e2e8f0; /* slate-200 */
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+        }
+        .markdown-content pre {
+            background-color: #1e293b; /* slate-800 */
+            color: #e2e8f0; /* slate-200 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+        }
+        .markdown-content blockquote {
+            border-left: 4px solid #94a3b8; /* slate-400 */
+            padding-left: 1rem;
+            color: #475569; /* slate-600 */
+            margin-left: 0;
+        }
+        /* Animação de carregamento */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="antialiased text-slate-800">
+
+    <div class="flex flex-col md:flex-row h-screen">
+        <!-- Barra Lateral -->
+        <aside class="w-full md:w-1/3 lg:w-1/4 xl:w-1/5 bg-white border-r border-slate-200 p-6 flex flex-col">
+            <header class="mb-6">
+                <h1 class="text-2xl font-bold text-slate-900">Meus Documentos</h1>
+                <p class="text-sm text-slate-500 mt-1">Buscando arquivos do repositório...</p>
+            </header>
+
+            <!-- Campo de Pesquisa -->
+            <div class="mt-6">
+                <label for="searchInput" class="block text-sm font-medium text-slate-700">Pesquisar arquivo</label>
+                <input type="search" id="searchInput" class="mt-1 block w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-sm shadow-sm placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-500 focus:border-sky-500" placeholder="Digite o nome do arquivo...">
+            </div>
+
+            <!-- Lista de Arquivos -->
+            <div id="loader" class="mt-6 text-center">
+                <div class="loader inline-block"></div>
+                <p class="text-sm text-slate-500 mt-2">Buscando arquivos...</p>
+            </div>
+            <nav id="file-list-container" class="mt-4 flex-grow overflow-y-auto">
+                <h2 class="text-lg font-semibold text-slate-800 mb-2">Arquivos</h2>
+                <ul id="file-list" class="space-y-1">
+                    <!-- Arquivos serão inseridos aqui via JS -->
+                </ul>
+                <p id="file-list-placeholder" class="text-sm text-slate-400">Carregando...</p>
+            </nav>
+        </aside>
+
+        <!-- Área de Conteúdo Principal -->
+        <main id="content-viewer" class="w-full md:w-2/3 lg:w-3/4 xl:w-4/5 p-4 md:p-8 overflow-y-auto">
+            <div id="viewer-placeholder" class="flex flex-col items-center justify-center h-full text-center text-slate-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h2 class="mt-4 text-xl font-medium">Bem-vindo!</h2>
+                <p class="mt-1 max-w-md">Selecione um arquivo na lista à esquerda para visualizá-lo aqui.</p>
+            </div>
+            
+            <div id="markdown-content" class="markdown-content prose max-w-none hidden"></div>
+            <div id="pdf-viewer-container" class="h-full w-full hidden">
+                <iframe id="pdf-viewer" class="h-full w-full border-0" title="Visualizador de PDF"></iframe>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- CONFIGURAÇÃO ---
+        // Altere os valores abaixo para o seu usuário e repositório do GitHub.
+        const GITHUB_USERNAME = "marllonDev"; // Ex: "google"
+        const GITHUB_REPO = "teste-pdf"; // Ex: "material-design-icons"
+        const DOCS_PATH = "documentos"; // A pasta onde seus arquivos estão.
+        // --- FIM DA CONFIGURAÇÃO ---
+
+
+        // --- Elementos do DOM ---
+        const searchInput = document.getElementById('searchInput');
+        const fileList = document.getElementById('file-list');
+        const fileListPlaceholder = document.getElementById('file-list-placeholder');
+        const loader = document.getElementById('loader');
+        
+        const viewerPlaceholder = document.getElementById('viewer-placeholder');
+        const markdownContent = document.getElementById('markdown-content');
+        const pdfViewerContainer = document.getElementById('pdf-viewer-container');
+        const pdfViewer = document.getElementById('pdf-viewer');
+
+        let activeFileElement = null;
+
+        /**
+         * Busca e exibe os arquivos do repositório GitHub de forma automática.
+         */
+        async function fetchFilesFromGitHub() {
+            loader.classList.remove('hidden');
+            fileList.innerHTML = '';
+            fileListPlaceholder.textContent = 'Carregando...';
+            fileListPlaceholder.classList.remove('hidden');
+
+            const apiUrl = `https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${DOCS_PATH}`;
+
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    throw new Error(`Erro na API do GitHub: ${response.status} ${response.statusText}. Verifique se o repositório é público e os dados estão corretos.`);
+                }
+                const data = await response.json();
+                
+                const supportedFiles = data.filter(item => 
+                    item.type === 'file' && (item.name.endsWith('.md') || item.name.endsWith('.pdf'))
+                );
+
+                if (supportedFiles.length > 0) {
+                    fileListPlaceholder.classList.add('hidden');
+                    supportedFiles.forEach(createFileListItem);
+                } else {
+                    fileListPlaceholder.textContent = `Nenhum arquivo .md ou .pdf encontrado na pasta "${DOCS_PATH}".`;
+                }
+
+            } catch (error) {
+                console.error('Falha ao buscar arquivos:', error);
+                fileListPlaceholder.textContent = 'Erro ao carregar os arquivos.';
+                alert(`Não foi possível buscar os arquivos. Detalhes: ${error.message}`);
+            } finally {
+                loader.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Cria um item da lista para um arquivo.
+         * @param {object} file - O objeto do arquivo da API do GitHub.
+         */
+        function createFileListItem(file) {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            
+            a.href = '#';
+            a.textContent = file.name;
+            a.dataset.url = file.download_url; // URL direta para o conteúdo
+            a.dataset.type = file.name.endsWith('.md') ? 'markdown' : 'pdf';
+            a.className = 'block w-full text-left px-3 py-2 text-sm rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors duration-150';
+
+            a.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (activeFileElement) {
+                    activeFileElement.classList.remove('bg-sky-100', 'text-sky-700', 'font-semibold');
+                    activeFileElement.classList.add('text-slate-600');
+                }
+                a.classList.add('bg-sky-100', 'text-sky-700', 'font-semibold');
+                a.classList.remove('text-slate-600');
+                activeFileElement = a;
+                loadFileContent(a.dataset.url, a.dataset.type);
+            });
+
+            li.appendChild(a);
+            fileList.appendChild(li);
+        }
+
+        /**
+         * Carrega e exibe o conteúdo de um arquivo selecionado.
+         * @param {string} url - A URL para download do conteúdo do arquivo.
+         * @param {string} type - O tipo do arquivo ('markdown' ou 'pdf').
+         */
+        async function loadFileContent(url, type) {
+            viewerPlaceholder.classList.remove('hidden');
+            viewerPlaceholder.innerHTML = `<div class="loader"></div><p class="mt-4 text-slate-500">Carregando conteúdo...</p>`;
+            markdownContent.classList.add('hidden');
+            pdfViewerContainer.classList.add('hidden');
+
+            try {
+                if (type === 'markdown') {
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error('Falha ao buscar o conteúdo do Markdown.');
+                    const text = await response.text();
+                    markdownContent.innerHTML = marked.parse(text);
+                    markdownContent.classList.remove('hidden');
+                    viewerPlaceholder.classList.add('hidden');
+                } else if (type === 'pdf') {
+                    pdfViewer.src = url;
+                    pdfViewerContainer.classList.remove('hidden');
+                    viewerPlaceholder.classList.add('hidden');
+                }
+            } catch (error) {
+                console.error('Erro ao carregar conteúdo:', error);
+                viewerPlaceholder.innerHTML = `<p class="text-red-500">Não foi possível carregar o arquivo.</p>`;
+            }
+        }
+
+        /**
+         * Filtra a lista de arquivos com base no texto da pesquisa.
+         */
+        function filterFiles() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const files = fileList.querySelectorAll('li');
+            let visibleCount = 0;
+
+            files.forEach(fileItem => {
+                const fileName = fileItem.textContent.toLowerCase();
+                if (fileName.includes(searchTerm)) {
+                    fileItem.style.display = 'block';
+                    visibleCount++;
+                } else {
+                    fileItem.style.display = 'none';
+                }
+            });
+            
+            if (visibleCount === 0 && files.length > 0) {
+                 fileListPlaceholder.textContent = 'Nenhum arquivo corresponde à pesquisa.';
+                 fileListPlaceholder.classList.remove('hidden');
+            } else if (files.length > 0) {
+                 fileListPlaceholder.classList.add('hidden');
+            }
+        }
+
+        // --- Event Listeners ---
+        searchInput.addEventListener('input', filterFiles);
+
+        // Carrega os arquivos do GitHub ao iniciar a página
+        window.addEventListener('DOMContentLoaded', () => {
+            fetchFilesFromGitHub();
+        });
+
+    </script>
+</body>
+</html>
